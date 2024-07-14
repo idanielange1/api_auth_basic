@@ -102,9 +102,109 @@ const deleteUser = async (id) => {
     };
 }
 
+const getAllUsers = async () => {
+    const users = await db.User.findAll({
+        where: {
+            status: true,
+        },
+        attributes: { exclude: ['password'] }
+    });
+    return {
+        code: 200,
+        message: users,
+    };
+};
+
+const findUsers = async (filters) => {
+    const { name, deleted, loginAntes, loginDespues } = filters;
+    const whereClause = {};
+
+    if (deleted !== undefined) { 
+        whereClause.status = deleted === 'true' ? false : true;
+    } /* Busca registros eliminados si 'deleted' es 'true',
+      de lo contrario, busca registros activos.*/
+    if (name) {
+        whereClause.name = {
+            [db.Sequelize.Op.like]: `%${name}%`
+        };
+    } /* Se construye una consulta dinámica para encontrar 
+    usuarios basada en varios filtros*/
+    if (loginAntes) {
+        whereClause.createdAt = {
+            [db.Sequelize.Op.lte]: new Date(loginAntes)
+        };
+    } /*Se filtran los usuarios creados
+    antes de la fecha especificada*/
+    if (loginDespues) {
+        whereClause.createdAt = {
+            [db.Sequelize.Op.gte]: new Date(loginDespues)
+        };
+    } /*Se filtran los usuarios creados
+     después de la fecha especificada*/
+
+    const users = await db.User.findAll({
+        where: whereClause,
+        attributes: { exclude: ['password'] }
+    });
+    return {
+        code: 200,
+        message: users,
+    };
+};
+
+const bulkCreateUsers = async (req) => {
+    const users = req.body;
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const user of users) {
+
+        const { name, email, password, password_second, cellphone } = user;
+        
+        if (password !== password_second) {
+            failureCount++;
+            continue;
+        }
+
+        const existingUser = await db.User.findOne({
+            where: {
+                email: email
+            }
+        });
+
+        if (existingUser) {
+            failureCount++;
+            continue;
+        }
+
+        const encryptedPassword = await bcrypt.hash(password, 10);
+
+        try {
+            await db.User.create({
+                name,
+                email,
+                password: encryptedPassword,
+                cellphone,
+                status: true
+            });
+            successCount++;
+        } catch (error) {
+            failureCount++;
+        }
+    }
+
+    return {
+        code: 200,
+        message: `Users created successfully: ${successCount}, Users not created: ${failureCount}`
+    };
+};
+
 export default {
     createUser,
     getUserById,
     updateUser,
     deleteUser,
+    getAllUsers,
+    findUsers,
+    bulkCreateUsers,
 }
